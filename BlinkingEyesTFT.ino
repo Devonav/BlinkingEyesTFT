@@ -1,68 +1,58 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
 #include <algorithm>
-
+// Display
 TFT_eSPI tft = TFT_eSPI();
 
-// Eye and blink constants
+// Constants
 #define EYE_WIDTH 30
 #define EYE_HEIGHT 50
-#define EYE_SPACING 80
-
+#define EYE_SPACING 55
 #define BLINK_FRAMES 20
 #define FRAME_DELAY 4
 #define OPEN_TIME_MIN 1000
 #define OPEN_TIME_MAX 4000
-
 #define DISPLAY_WIDTH 320
 #define DISPLAY_HEIGHT 170
+const int maxPupilOffsetX = 16;
+const int maxPupilOffsetY = 12;
 
+// States
 int blinkState = 0;
 bool isBlinking = false;
+bool isWinking = false;
+int winkEyeIndex = -1;
 unsigned long lastBlinkTime = 0;
 unsigned long openTime = OPEN_TIME_MIN;
+unsigned long lastPupilMove = 0;
+const int pupilMoveInterval = 1000;
 
+// Tracking
+bool trackingMode = true;
+float targetX = 0;
+float targetY = 0;
+float angle = 0.0;
+float radius = 20.0;
+unsigned long lastTargetUpdate = 0;
+
+// Eye positions
 int16_t eyeY;
 int16_t eyePositions[2];
+int16_t pupilOffsetX[2] = {0, 0};
+int16_t pupilOffsetY[2] = {0, 0};
 
+// Buffer
 uint16_t *buffer = nullptr;
 int bufferWidth = 0;
 int bufferHeight = 0;
 int bufferX = 0;
 int bufferY = 0;
 
-// Pupil tracking
-int16_t pupilOffsetX[2] = {0, 0};
-int16_t pupilOffsetY[2] = {0, 0};
-unsigned long lastPupilMove = 0;
-const int pupilMoveInterval = 1000;
-const int maxPupilOffset = 9;
-
-// Mood system
-struct Mood {
-  const char* name;
-  uint16_t eyeColor;
-  uint16_t bgColor;
-};
-
-Mood moods[] = {
-  {"Happy", TFT_YELLOW, TFT_BLACK},
-  {"Sleepy", TFT_BLUE, TFT_NAVY},
-  {"Angry", TFT_RED, TFT_DARKGREY},
-  {"Calm", TFT_WHITE, TFT_BLACK},
-  {"Excited", TFT_CYAN, TFT_MAGENTA},
-  {"Neutral", TFT_WHITE, TFT_BLACK}
-};
-
+// Mood colors
 uint16_t currentEyeColor = TFT_WHITE;
 uint16_t currentBgColor = TFT_BLACK;
-unsigned long lastMoodChange = 0;
-const int moodChangeInterval = 1000;
 
-// Winking
-bool isWinking = false;
-int winkEyeIndex = -1;
-
+// Helper: Fill ellipse into buffer
 void bufferFillEllipse(int16_t x0, int16_t y0, int16_t rx, int16_t ry, uint16_t color) {
   x0 = x0 - bufferX;
   y0 = y0 - bufferY;
@@ -79,6 +69,7 @@ void bufferFillEllipse(int16_t x0, int16_t y0, int16_t rx, int16_t ry, uint16_t 
   }
 }
 
+// Clear and flush buffer
 void clearBuffer() {
   for (int i = 0; i < bufferWidth * bufferHeight; i++) {
     buffer[i] = currentBgColor;
@@ -91,20 +82,8 @@ void flushBuffer() {
   tft.pushPixels(buffer, bufferWidth * bufferHeight);
   tft.endWrite();
 }
-void drawEyebrows() {
-  for (int i = 0; i < 2; i++) {
-    int16_t browX = eyePositions[i];
-    int16_t browY = bufferY - 10; // a bit above the top of the buffer
-    int16_t browLength = 20;
 
-    // Static angled line (you can make this dynamic later)
-    tft.drawLine(browX - browLength / 2, browY,
-                 browX + browLength / 2, browY - 5,
-                 currentEyeColor);  // Match eye color or pick your own
-  }
-}
-
-
+// Draw pupils and eyes
 void drawEyesWithPupils(int currentHeight) {
   clearBuffer();
   for (int i = 0; i < 2; i++) {
@@ -120,8 +99,6 @@ void drawEyesWithPupils(int currentHeight) {
     }
   }
   flushBuffer();
-  drawEyebrows();
-
 }
 
 void setup() {
@@ -129,11 +106,11 @@ void setup() {
   delay(1000);
 
   tft.init();
-  tft.setRotation(1);  // Landscape
-  tft.fillScreen(TFT_BLACK);
+  tft.setRotation(3);  // Landscape, flipped for USB right-side
+  tft.fillScreen(currentBgColor);
 
   pinMode(38, OUTPUT);
-  digitalWrite(38, HIGH);
+  digitalWrite(38, HIGH);  // Backlight on
 
   int16_t startX = (tft.width() - EYE_SPACING) / 2;
   eyeY = tft.height() / 2;
@@ -157,38 +134,53 @@ void setup() {
   randomSeed(micros());
 
   lastBlinkTime = millis();
-  lastMoodChange = millis();
   openTime = random(OPEN_TIME_MIN, OPEN_TIME_MAX);
 }
 
 void loop() {
   unsigned long currentTime = millis();
 
-  // Mood update
-  if (currentTime - lastMoodChange >= moodChangeInterval) {
-    int moodIndex = random(0, sizeof(moods) / sizeof(Mood));
-    currentEyeColor = moods[moodIndex].eyeColor;
-    currentBgColor = moods[moodIndex].bgColor;
-    lastMoodChange = currentTime;
-      // Fill the full display background
-
-
-    Serial.print("Mood changed: ");
-    Serial.println(moods[moodIndex].name);
+  // Serial toggle for tracking mode
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 't') {
+      trackingMode = !trackingMode;
+      Serial.println(trackingMode ? "Tracking ON" : "Tracking OFF");
+      angle = 0;
+    }
   }
 
-  // Pupil motion
-  if (currentTime - lastPupilMove >= pupilMoveInterval && !isBlinking) {
-    for (int i = 0; i < 2; i++) {
-      pupilOffsetX[i] = random(-maxPupilOffset, maxPupilOffset + 1);
-      pupilOffsetY[i] = random(-maxPupilOffset / 2, maxPupilOffset / 2 + 1);
+  // Pupil tracking
+  if (!isBlinking) {
+    if (trackingMode) {
+      if (millis() - lastTargetUpdate > 16) {
+        angle += 0.02;
+        targetX = sin(angle) * radius;
+        targetY = cos(angle * 1.5) * radius * 0.7;
+
+        for (int i = 0; i < 2; i++) {
+          pupilOffsetX[i] = (int16_t)targetX;
+          pupilOffsetY[i] = (int16_t)targetY;
+        }
+
+        lastTargetUpdate = millis();
+      }
+    } else if (millis() - lastPupilMove > pupilMoveInterval) {
+      int16_t dx = random(-maxPupilOffsetX, maxPupilOffsetX + 1);
+      int16_t dy = random(-maxPupilOffsetY, maxPupilOffsetY + 1);
+
+      for (int i = 0; i < 2; i++) {
+        pupilOffsetX[i] = dx;
+        pupilOffsetY[i] = dy;
+      }
+
+      lastPupilMove = millis();
     }
-    lastPupilMove = currentTime;
   }
 
   // Blink or wink start
   if (!isBlinking && (currentTime - lastBlinkTime >= openTime)) {
-    if (random(10) < 2) {  // 20% chance of wink
+    if (random(10) < 2) {  // 20% chance wink
       isWinking = true;
       winkEyeIndex = random(0, 2);
     } else {
@@ -201,28 +193,28 @@ void loop() {
   }
 
   if (isBlinking) {
-    float blinkProgress;
+    float progress;
     if (blinkState < BLINK_FRAMES / 2) {
-      blinkProgress = (float)blinkState / (BLINK_FRAMES / 2);
-      blinkProgress = 1.0 - (blinkProgress * blinkProgress);
+      progress = 1.0 - pow((float)blinkState / (BLINK_FRAMES / 2), 2);
     } else {
-      blinkProgress = (float)(blinkState - BLINK_FRAMES / 2) / (BLINK_FRAMES / 2);
-      blinkProgress = blinkProgress * (2 - blinkProgress);
+      float p = (float)(blinkState - BLINK_FRAMES / 2) / (BLINK_FRAMES / 2);
+      progress = p * (2 - p);
     }
 
-    int16_t currentHeight = std::max((int16_t)1, (int16_t)(EYE_HEIGHT * blinkProgress));
-    drawEyesWithPupils(currentHeight);
+    int16_t h = std::max((int16_t)1, (int16_t)(EYE_HEIGHT * progress));
+    drawEyesWithPupils(h);
     blinkState++;
 
     if (blinkState >= BLINK_FRAMES) {
       isBlinking = false;
       lastBlinkTime = millis();
       openTime = random(OPEN_TIME_MIN, OPEN_TIME_MAX);
-      if (random(10) == 0) openTime = 300;  // occasional double-blink
+      if (random(10) == 0) openTime = 300;  // double-blink chance
     }
 
     delay(FRAME_DELAY);
   } else {
+    drawEyesWithPupils(EYE_HEIGHT);
     delay(FRAME_DELAY * 4);
   }
 }
