@@ -8,4 +8,5 @@ This project animates smooth blinking eyes on the LILYGO T-Display-S3 using Ardu
 
 ## 🎞️ Demo
 
-![Animated Eyes Demo](eyes.gif)
+![Eyes Animation](eyes.gif)
+
