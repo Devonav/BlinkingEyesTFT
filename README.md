@@ -13,7 +13,7 @@ This project runs a smooth eye-blinking animation on the LILYGO T-Display-S3 usi
 - Built-in 1.9" ST7789 TFT display (320x170)
 
 ##  Features
-- Adjustable eye spacing (`EYE_SPACING`)
+- Adjustable eye spacing (`EYE_SPACING`) 
 - Optional eye tracking mode (`t` key in Serial Monitor)
 - Winking, random blinking, and mood-based colors
 
