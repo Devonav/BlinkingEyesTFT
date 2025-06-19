@@ -1,6 +1,6 @@
 # Blinking Eyes on ESP32-S3 T-Display
 
-This project runs a smooth eye-blinking animation on the LILYGO T-Display-S3 using the `TFT_eSPI` library. It features:
+This project runs a smooth eye-blinking animation on the LILYGO T-Display-S3 using the `TFT_eSPI` library. It will feature:
 
 - Smooth blinking and pupil tracking
 - Centered and adjustable eye spacing
